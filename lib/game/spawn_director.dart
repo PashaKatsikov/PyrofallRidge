@@ -55,6 +55,14 @@ class SpawnDirector {
   final List<Updraft> updrafts = <Updraft>[];
   final List<Pickup> pickups = <Pickup>[];
 
+  /// Fired once, on the frame a hazard slams into the ridge. The
+  /// [GameController] uses it to shake the camera, thump the Taptic engine and
+  /// throw sparks - none of which belong in the spawn logic itself.
+  void Function(FallingObject obj)? onImpact;
+
+  /// Fired once, on the frame an updraft column finishes charging.
+  void Function(Updraft updraft)? onUpdraftActivated;
+
   double _timeUntilNextSpawn = 1.4;
   double _timeUntilNextUpdraft = 30;
   int _nextPickupRow = 6;
@@ -268,6 +276,7 @@ class SpawnDirector {
               worldY: obj.targetWorldY,
               type: obj.type,
             );
+            onImpact?.call(obj);
           }
           break;
         case FallingPhase.impact:
@@ -301,6 +310,7 @@ class SpawnDirector {
           if (u.phaseTime >= u.telegraphDuration) {
             u.phase = UpdraftPhase.active;
             u.phaseTime = 0;
+            onUpdraftActivated?.call(u);
           }
           break;
         case UpdraftPhase.active:

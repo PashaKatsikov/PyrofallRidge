@@ -52,4 +52,11 @@ class Palette {
   static const Color updraftCore = Color(0xFFFFC24C);
   static const Color updraftEdge = Color(0xFFFF8A3C);
   static const Color updraftStripe = Color(0xFFFFF3D0);
+
+  // Atmospheric particles.
+  static const Color emberHot = Color(0xFFFFD98A);
+  static const Color emberCool = Color(0xFFFF5F2E);
+  static const Color ash = Color(0xFF9A8C86);
+  static const Color dust = Color(0xFF8A7166);
+  static const Color sparkHot = Color(0xFFFFF6DC);
 }

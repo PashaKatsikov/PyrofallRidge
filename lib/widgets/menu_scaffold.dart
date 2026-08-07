@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/layout_config.dart';
+import '../services/audio_service.dart';
+import '../services/haptic_service.dart';
+
 /// Shared chrome for every out-of-game screen: painted volcanic backdrop,
 /// darkening veil so text stays legible, and a compact header with a back
 /// button and an optional trailing widget.
@@ -21,6 +25,7 @@ class MenuScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Size size = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: const Color(0xFF120A10),
       body: Stack(
@@ -38,11 +43,25 @@ class MenuScaffold extends StatelessWidget {
             child: SizedBox.expand(),
           ),
           SafeArea(
-            child: Column(
-              children: [
-                _Header(title: title, showBack: showBack, trailing: trailing),
-                Expanded(child: child),
-              ],
+            child: Center(
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxWidth: LayoutConfig.contentWidth(size)),
+                // Typography scales with the column, so an iPad gets a genuine
+                // tablet layout instead of phone-sized text floating in the
+                // middle of a large screen.
+                child: MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(textScaler: LayoutConfig.textScaler(context, size)),
+                  child: Column(
+                    children: [
+                      _Header(
+                          title: title, showBack: showBack, trailing: trailing),
+                      Expanded(child: child),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -70,7 +89,11 @@ class _Header extends StatelessWidget {
         children: [
           if (showBack)
             IconButton(
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed: () {
+                HapticService.instance.light();
+                AudioService.instance.play(Sfx.menuClose);
+                Navigator.of(context).maybePop();
+              },
               icon: const Icon(Icons.arrow_back, color: Colors.white),
               tooltip: 'Back',
             ),

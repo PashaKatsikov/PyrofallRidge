@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../models/skin.dart';
+import '../services/audio_service.dart';
+import '../services/haptic_service.dart';
 import '../services/progress_service.dart';
 import '../services/skin_atlas_service.dart';
 import '../services/skin_manager.dart';
@@ -55,7 +57,11 @@ class SkinsScreen extends StatelessWidget {
                       unlocked: unlocked,
                       selected: selectedId == skin.id,
                       onTap: unlocked
-                          ? () => SkinManager.instance.selectSkin(skin.id)
+                          ? () {
+                              AudioService.instance.play(Sfx.select);
+                              HapticService.instance.light();
+                              SkinManager.instance.selectSkin(skin.id);
+                            }
                           : null,
                     );
                   },

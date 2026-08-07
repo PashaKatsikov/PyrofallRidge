@@ -41,6 +41,22 @@ class TerrainSprites {
     SheetCoord(1, 5),
   ];
 
+  /// [rockfallBody]'s three boulders are hand-painted wide enough that their
+  /// right shoulder spills past its nominal grid column into the next one -
+  /// the sheet was illustrated by eye, not laid out on a strict grid. Without
+  /// widening the content search past the grid line for exactly these cells,
+  /// the crop clips a round boulder into one with a flat, straight-cut side.
+  /// Measured against the source sheet, with a little headroom; each value
+  /// stays comfortably short of the next drawing over so it never bleeds in
+  /// a sliver of the neighbour instead.
+  static Map<int, double> rockfallRightOverscanPx(int columns) => <int, double>{
+        _flat(rockfallBody[0], columns): 26,
+        _flat(rockfallBody[1], columns): 64,
+        _flat(rockfallBody[2], columns): 30,
+      };
+
+  static int _flat(SheetCoord c, int columns) => (c.row - 1) * columns + (c.col - 1);
+
   static const List<SheetCoord> _singles = <SheetCoord>[
     floorTile,
     platformTile,

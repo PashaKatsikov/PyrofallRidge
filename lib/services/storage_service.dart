@@ -22,6 +22,10 @@ class StorageService {
   static const String _upgradesKey = 'pyrofall_ridge.upgrades';
   static const String _effectsQualityKey = 'pyrofall_ridge.effects_quality';
   static const String _backgroundsKey = 'pyrofall_ridge.show_backgrounds';
+  static const String _sfxVolumeKey = 'pyrofall_ridge.sfx_volume';
+  static const String _musicVolumeKey = 'pyrofall_ridge.music_volume';
+  static const String _hapticsKey = 'pyrofall_ridge.haptics_enabled';
+  static const String _onboardedKey = 'pyrofall_ridge.onboarded';
 
   static const List<String> _progressKeys = <String>[
     _bestHeightKey,
@@ -128,6 +132,31 @@ class StorageService {
 
   Future<void> saveShowBackgrounds(bool value) async =>
       (await _prefs).setBool(_backgroundsKey, value);
+
+  Future<double> loadSfxVolume() async =>
+      (await _prefs).getDouble(_sfxVolumeKey) ?? 0.8;
+
+  Future<void> saveSfxVolume(double value) async =>
+      (await _prefs).setDouble(_sfxVolumeKey, value);
+
+  Future<double> loadMusicVolume() async =>
+      (await _prefs).getDouble(_musicVolumeKey) ?? 0.5;
+
+  Future<void> saveMusicVolume(double value) async =>
+      (await _prefs).setDouble(_musicVolumeKey, value);
+
+  Future<bool> loadHapticsEnabled() async =>
+      (await _prefs).getBool(_hapticsKey) ?? true;
+
+  Future<void> saveHapticsEnabled(bool value) async =>
+      (await _prefs).setBool(_hapticsKey, value);
+
+  /// Whether the player has already been shown the first-run swipe tutorial.
+  Future<bool> loadOnboarded() async =>
+      (await _prefs).getBool(_onboardedKey) ?? false;
+
+  Future<void> saveOnboarded(bool value) async =>
+      (await _prefs).setBool(_onboardedKey, value);
 
   /// Wipes progression only - the player's settings survive a reset.
   Future<void> clearProgress() async {

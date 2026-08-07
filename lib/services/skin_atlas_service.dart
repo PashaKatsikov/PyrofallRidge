@@ -22,7 +22,7 @@ class SkinAtlasService {
 
   /// Front-facing sprites shown in the Skins screen.
   final SpriteAtlas _uiAtlas = SpriteAtlas(
-    assetPath: 'assets/skins/skins_atlas.png',
+    assetPath: 'assets/skins/skins_atlas.webp',
     columns: columns,
     rows: rows,
     mirrorX: false,
@@ -31,7 +31,7 @@ class SkinAtlasService {
 
   /// Back/side-facing sprites rendered on the in-game player character.
   final SpriteAtlas _inGameAtlas = SpriteAtlas(
-    assetPath: 'assets/skins/skins_ingame_atlas.png',
+    assetPath: 'assets/skins/skins_ingame_atlas.webp',
     columns: columns,
     rows: rows,
     mirrorX: false,

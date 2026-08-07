@@ -1,10 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
+import '../core/layout_config.dart';
 import '../rendering/item_sprites.dart';
 import '../services/items_atlas_service.dart';
 import '../services/progress_service.dart';
 import '../widgets/atlas_icon.dart';
-import '../widgets/legal_links_row.dart';
 import '../widgets/menu_scaffold.dart';
 import '../widgets/menu_tile.dart';
 import '../widgets/progress_badges.dart';
@@ -26,13 +28,12 @@ class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
 
   void _open(BuildContext context, Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   @override
   Widget build(BuildContext context) {
+    final Size size = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: const Color(0xFF120A10),
       body: Stack(
@@ -50,9 +51,21 @@ class MainMenuScreen extends StatelessWidget {
             child: SizedBox.expand(),
           ),
           SafeArea(
-            child: AnimatedBuilder(
-              animation: ProgressService.instance,
-              builder: (context, _) => _MenuBody(onOpen: _open),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: LayoutConfig.contentWidth(size),
+                ),
+                child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: LayoutConfig.textScaler(context, size),
+                  ),
+                  child: AnimatedBuilder(
+                    animation: ProgressService.instance,
+                    builder: (context, _) => _MenuBody(onOpen: _open),
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -69,120 +82,172 @@ class _MenuBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ProgressService progress = ProgressService.instance;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Column(
-        children: [
-          Row(
-            children: const [
-              Expanded(child: LevelPanel(compact: true)),
-              SizedBox(width: 10),
-              EmbersBadge(),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Image.asset(
-            'assets/Game_Name.webp',
-            width: 210,
-            fit: BoxFit.contain,
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
+    final double scale = LayoutConfig.uiScale(MediaQuery.sizeOf(context));
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The wordmark is the one element with slack in it, so it absorbs the
+        // difference between a tall phone and a short one - which is what keeps
+        // the whole menu on a single screen instead of hiding the bottom row of
+        // tiles below a scroll the player has no reason to expect.
+        final double logoWidth = min(
+          210 * scale,
+          constraints.maxHeight * 0.235,
+        );
+        final double gap = (constraints.maxHeight * 0.018).clamp(8.0, 22.0);
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: 20 * scale, vertical: 8),
+          child: Column(
             children: [
-              AtlasIcon(
-                image: ItemsAtlasService.instance.cell(
-                    ItemSprites.uiTitleEmblem.row,
-                    ItemSprites.uiTitleEmblem.col),
-                size: 15,
-                fallback: Icons.auto_awesome,
-                fallbackColor: Colors.white70,
+              Row(
+                children: const [
+                  Expanded(child: LevelPanel(compact: true)),
+                  SizedBox(width: 10),
+                  EmbersBadge(),
+                ],
               ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Climb as high as the mountain allows',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 12.5,
-                    letterSpacing: 0.4,
+              SizedBox(height: gap),
+              _BreathingLogo(width: logoWidth),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AtlasIcon(
+                    image: ItemsAtlasService.instance.cell(
+                      ItemSprites.uiTitleEmblem.row,
+                      ItemSprites.uiTitleEmblem.col,
+                    ),
+                    size: 15,
+                    fallback: Icons.auto_awesome,
+                    fallbackColor: Colors.white70,
                   ),
-                ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Climb as high as the mountain allows',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12.5,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              SizedBox(height: gap * 0.7),
+              _BestHeightLine(meters: progress.bestHeightMeters),
+              SizedBox(height: gap),
+              PrimaryButton(
+                label: 'PLAY',
+                width: 220,
+                onTap: () => onOpen(context, const GameScreen()),
+              ),
+              const SizedBox(height: 10),
+              // Kept out of the tile grid below so that grid stays two even rows,
+              // and because spending Embers deserves to sit next to PLAY.
+              PrimaryButton(
+                label: 'UPGRADES',
+                icon: Icons.upgrade_rounded,
+                filled: false,
+                width: 220,
+                onTap: () => onOpen(context, const ShopScreen()),
+              ),
+              SizedBox(height: gap),
+              GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.02,
+                children: [
+                  MenuTile(
+                    label: 'SKINS',
+                    icon: ItemSprites.uiSkinsButton,
+                    fallbackIcon: Icons.face_retouching_natural,
+                    onTap: () => onOpen(context, const SkinsScreen()),
+                  ),
+                  MenuTile(
+                    label: 'GOALS',
+                    icon: ItemSprites.uiGoals,
+                    fallbackIcon: Icons.flag,
+                    badge: progress.claimableGoalCount > 0,
+                    onTap: () => onOpen(context, const GoalsScreen()),
+                  ),
+                  MenuTile(
+                    label: 'DAILY',
+                    icon: ItemSprites.uiDaily,
+                    fallbackIcon: Icons.card_giftcard,
+                    badge: progress.canClaimDaily,
+                    onTap: () => onOpen(context, const DailyRewardScreen()),
+                  ),
+                  MenuTile(
+                    label: 'RANKING',
+                    icon: ItemSprites.uiLeaderboard,
+                    fallbackIcon: Icons.leaderboard,
+                    onTap: () => onOpen(context, const LeaderboardScreen()),
+                  ),
+                  MenuTile(
+                    label: 'HOW TO PLAY',
+                    icon: ItemSprites.uiHowToPlay,
+                    fallbackIcon: Icons.help_outline,
+                    onTap: () => onOpen(context, const HowToPlayScreen()),
+                  ),
+                  MenuTile(
+                    label: 'SETTINGS',
+                    icon: ItemSprites.uiSettings,
+                    fallbackIcon: Icons.settings,
+                    onTap: () => onOpen(context, const SettingsScreen()),
+                  ),
+                ],
+              ),
+              SizedBox(height: gap * 0.5),
             ],
           ),
-          const SizedBox(height: 14),
-          _BestHeightLine(meters: progress.bestHeightMeters),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            label: 'PLAY',
-            width: 220,
-            onTap: () => onOpen(context, const GameScreen()),
-          ),
-          const SizedBox(height: 10),
-          // Kept out of the tile grid below so that grid stays two even rows,
-          // and because spending Embers deserves to sit next to PLAY.
-          PrimaryButton(
-            label: 'UPGRADES',
-            icon: Icons.upgrade_rounded,
-            filled: false,
-            width: 220,
-            onTap: () => onOpen(context, const ShopScreen()),
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 0.95,
-            children: [
-              MenuTile(
-                label: 'SKINS',
-                icon: ItemSprites.uiSkinsButton,
-                fallbackIcon: Icons.face_retouching_natural,
-                onTap: () => onOpen(context, const SkinsScreen()),
-              ),
-              MenuTile(
-                label: 'GOALS',
-                icon: ItemSprites.uiGoals,
-                fallbackIcon: Icons.flag,
-                badge: progress.claimableGoalCount > 0,
-                onTap: () => onOpen(context, const GoalsScreen()),
-              ),
-              MenuTile(
-                label: 'DAILY',
-                icon: ItemSprites.uiDaily,
-                fallbackIcon: Icons.card_giftcard,
-                badge: progress.canClaimDaily,
-                onTap: () => onOpen(context, const DailyRewardScreen()),
-              ),
-              MenuTile(
-                label: 'RANKING',
-                icon: ItemSprites.uiLeaderboard,
-                fallbackIcon: Icons.leaderboard,
-                onTap: () => onOpen(context, const LeaderboardScreen()),
-              ),
-              MenuTile(
-                label: 'HOW TO PLAY',
-                icon: ItemSprites.uiHowToPlay,
-                fallbackIcon: Icons.help_outline,
-                onTap: () => onOpen(context, const HowToPlayScreen()),
-              ),
-              MenuTile(
-                label: 'SETTINGS',
-                icon: ItemSprites.uiSettings,
-                fallbackIcon: Icons.settings,
-                onTap: () => onOpen(context, const SettingsScreen()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const LegalLinksRow(),
-          const SizedBox(height: 6),
-        ],
+        );
+      },
+    );
+  }
+}
+
+/// The wordmark, breathing very slowly.
+///
+/// A perfectly still title on an otherwise animated menu is the one thing that
+/// makes a game look like a mock-up, and the movement is small enough that it
+/// never competes with the PLAY button for attention.
+class _BreathingLogo extends StatefulWidget {
+  const _BreathingLogo({required this.width});
+
+  final double width;
+
+  @override
+  State<_BreathingLogo> createState() => _BreathingLogoState();
+}
+
+class _BreathingLogoState extends State<_BreathingLogo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3400),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: Tween<double>(
+        begin: 0.985,
+        end: 1.02,
+      ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut)),
+      child: Image.asset(
+        'assets/Game_Name.webp',
+        width: widget.width,
+        fit: BoxFit.contain,
       ),
     );
   }
@@ -210,8 +275,10 @@ class _BestHeightLine extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         AtlasIcon(
-          image: ItemsAtlasService.instance
-              .cell(ItemSprites.uiHeight.row, ItemSprites.uiHeight.col),
+          image: ItemsAtlasService.instance.cell(
+            ItemSprites.uiHeight.row,
+            ItemSprites.uiHeight.col,
+          ),
           size: 16,
           fallback: Icons.terrain,
           fallbackColor: kAccent,

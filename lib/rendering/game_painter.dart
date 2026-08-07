@@ -5,10 +5,13 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 
 import '../core/game_config.dart';
+import '../core/layout_config.dart';
 import '../game/game_controller.dart';
+import '../game/particle_field.dart';
 import '../game/player.dart';
 import '../models/falling_object.dart';
 import '../models/floating_text.dart';
+import '../models/game_phase.dart';
 import '../models/lane.dart';
 import '../models/pickup.dart';
 import '../models/segment.dart';
@@ -82,7 +85,31 @@ class GamePainter extends CustomPainter {
   );
 
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size rawSize) {
+    // Everything below is authored against a phone-sized viewport. On a bigger
+    // screen the entire playfield is drawn through one uniform scale, so an
+    // iPad shows the same amount of ridge as an iPhone - just larger - and no
+    // sprite, lane or hitbox has to know which device it is on.
+    final double worldScale = LayoutConfig.worldScale(rawSize);
+    final Size size = LayoutConfig.worldViewport(rawSize);
+
+    canvas.save();
+    if (worldScale != 1) canvas.scale(worldScale);
+
+    // Camera shake is a pure canvas translation applied over the whole world,
+    // deliberately *inside* the scale so it reads with the same strength on
+    // every device, and never touches the camera's world anchor.
+    if (controller.camera.isShaking) {
+      canvas.translate(controller.camera.offsetX, controller.camera.offsetY);
+    }
+
+    _paintWorld(canvas, size);
+    canvas.restore();
+
+    _drawScreenOverlays(canvas, rawSize);
+  }
+
+  void _paintWorld(Canvas canvas, Size size) {
     final double width = size.width;
     final double height = size.height;
     if (size != _cachedSize) {
@@ -91,8 +118,16 @@ class GamePainter extends CustomPainter {
     }
     _drawBackground(canvas, size);
 
-    final double sideMargin = width * _sideMarginFraction;
-    final double laneAreaWidth = width - sideMargin * 2;
+    // Within the (already scaled) viewport the lane column is still clamped to
+    // a phone-ish width and centred, so an unusually wide window - a landscape
+    // phone, a split-screen iPad - widens the void strips instead of the
+    // lanes. The background art fills the rest, so nothing looks empty.
+    final double contentWidth = min(width, LayoutConfig.maxContentWidth);
+    final double outerGutter = (width - contentWidth) / 2;
+    final double sideMargin =
+        outerGutter + contentWidth * _sideMarginFraction;
+    final double laneAreaWidth =
+        contentWidth - contentWidth * _sideMarginFraction * 2;
     final double laneWidth = (laneAreaWidth - _laneGap) / 2;
     final double leftLaneLeft = sideMargin;
     final double rightLaneLeft = sideMargin + laneWidth + _laneGap;
@@ -161,7 +196,11 @@ class GamePainter extends CustomPainter {
       _drawHazardBody(canvas, obj, centerXOf(obj.lane), screenYOf);
     }
 
-    // Layer 6: player.
+    // Layer 6: particles behind the player (ash drifting down, embers rising
+    // from below) - the ones drawn in front are done after the player.
+    _drawParticles(canvas, centerXOf, laneWidth, screenYOf, inFront: false);
+
+    // Layer 7: player.
     final bool boosting = controller.spawnDirector
         .isBoosting(controller.player.lane, controller.player.worldY);
     final ui.Image? skinImage = SkinAtlasService.instance
@@ -169,7 +208,9 @@ class GamePainter extends CustomPainter {
     _drawPlayer(canvas, controller.player, leftCenterX, rightCenterX,
         anchorScreenY, boosting, skinImage);
 
-    // Layer 7: VFX (impact bursts, landed smoke, ambient smoke, collect
+    _drawParticles(canvas, centerXOf, laneWidth, screenYOf, inFront: true);
+
+    // Layer 8: VFX (impact bursts, landed smoke, ambient smoke, collect
     // blips) and their floating "+N" companions.
     for (final v in controller.vfxManager.active) {
       _drawVfxInstance(canvas, v, centerXOf(v.lane), screenYOf);
@@ -178,10 +219,55 @@ class GamePainter extends CustomPainter {
       _drawFloatingText(canvas, t, centerXOf(t.lane), screenYOf);
     }
 
-    // Layer 8: telegraphs, always drawn last so warnings never get buried
+    // Layer 9: telegraphs, always drawn last so warnings never get buried
     // under a hazard body, the player or a VFX puff.
     for (final obj in controller.spawnDirector.active) {
       _drawTelegraphLayer(canvas, obj, centerXOf(obj.lane), screenYOf);
+    }
+  }
+
+  /// Full-screen treatments that must not be affected by the world scale or
+  /// the camera shake: the heat vignette, the combo glow and the fade that
+  /// closes a run.
+  void _drawScreenOverlays(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+
+    // Combo heat: the edges of the screen catch fire as the streak climbs, so
+    // the reward for a long chain is visible without looking at the HUD.
+    final int multiplier = controller.hud.value.comboMultiplier;
+    if (multiplier > 1 && controller.phase.value == GamePhase.playing) {
+      final double intensity =
+          ((multiplier - 1) / (GameConfig.comboMaxMultiplier - 1))
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final double pulse = 0.75 + 0.25 * sin(controller.runTime * 7);
+      final double band = size.height * 0.16;
+      _drawEdgeGlow(canvas, rect, band, 0.16 * intensity * pulse);
+    }
+
+    final double fade = controller.deathFade;
+    if (fade > 0) {
+      _fillPaint.color = const Color(0xFF12060A).withValues(alpha: fade);
+      canvas.drawRect(rect, _fillPaint);
+    }
+  }
+
+  /// Warm banding hugging the top and bottom edges of the screen. Built from
+  /// flat strips for the same reason the ground gradients are: a full-screen
+  /// shader rebuilt per frame is by far the most expensive thing here.
+  void _drawEdgeGlow(Canvas canvas, Rect rect, double band, double alpha) {
+    const int steps = 4;
+    for (int i = 0; i < steps; i++) {
+      final double f = 1 - (i + 0.5) / steps;
+      final double h = band / steps;
+      _fillPaint.color = Palette.dangerCore.withValues(alpha: alpha * f);
+      canvas.drawRect(
+          Rect.fromLTWH(rect.left, rect.top + h * i, rect.width, h),
+          _fillPaint);
+      canvas.drawRect(
+          Rect.fromLTWH(
+              rect.left, rect.bottom - h * (i + 1), rect.width, h),
+          _fillPaint);
     }
   }
 
@@ -908,8 +994,80 @@ class GamePainter extends CustomPainter {
     return cached;
   }
 
+  // --- Particles -------------------------------------------------------------
+
+  /// Draws the atmospheric/impact particle layer.
+  ///
+  /// Split into a pass behind the player and one in front so sparks from an
+  /// impact wrap around the climber instead of always sitting flat behind
+  /// them: the short-lived, bright kinds go in front, the slow ambient ones
+  /// stay behind.
+  void _drawParticles(
+    Canvas canvas,
+    double Function(Lane) centerXOf,
+    double laneWidth,
+    double Function(double) screenYOf, {
+    required bool inFront,
+  }) {
+    for (final Particle p in controller.particles.active) {
+      final bool isForeground =
+          p.kind == ParticleKind.spark || p.kind == ParticleKind.dust;
+      if (isForeground != inFront) continue;
+
+      final double t = p.t;
+      final double x = centerXOf(p.lane) + p.offsetXFraction * laneWidth;
+      final double y = screenYOf(p.worldY);
+
+      switch (p.kind) {
+        case ParticleKind.ember:
+          // Embers cool as they rise and drift on a slow sine, which is what
+          // stops a field of dots from looking like falling snow in reverse.
+          final double sway = sin(t * 6 + p.spinSeed) * laneWidth * 0.05;
+          _fillPaint.color = Color.lerp(
+            Palette.emberHot,
+            Palette.emberCool,
+            t,
+          )!
+              .withValues(alpha: (1 - t) * 0.85);
+          canvas.drawCircle(
+              Offset(x + sway, y), p.size * (1 - t * 0.4), _fillPaint);
+          break;
+
+        case ParticleKind.ash:
+          final double sway = sin(t * 4 + p.spinSeed) * laneWidth * 0.08;
+          _fillPaint.color = Palette.ash
+              .withValues(alpha: (1 - t) * 0.30 * (t < 0.15 ? t / 0.15 : 1));
+          canvas.drawCircle(Offset(x + sway, y), p.size * 0.8, _fillPaint);
+          break;
+
+        case ParticleKind.dust:
+          _fillPaint.color =
+              Palette.dust.withValues(alpha: (1 - t) * 0.55);
+          canvas.drawCircle(Offset(x, y), p.size * (0.7 + t * 1.1), _fillPaint);
+          break;
+
+        case ParticleKind.spark:
+          _fillPaint.color = Color.lerp(
+            Palette.sparkHot,
+            Palette.emberCool,
+            t * t,
+          )!
+              .withValues(alpha: (1 - t * t));
+          canvas.drawCircle(Offset(x, y), p.size * (1 - t * 0.55), _fillPaint);
+          break;
+      }
+    }
+  }
+
   // --- Player ----------------------------------------------------------------
 
+  /// Draws the climber, driven entirely by the procedural rig on [Player].
+  ///
+  /// The skin atlas only provides a single static sprite per character, so
+  /// everything that makes them feel alive happens here: a two-step climb bob,
+  /// a leaping arc with squash-and-stretch across a lane change, a contact
+  /// shadow that widens as they leave the ground, an updraft stretch, and a
+  /// tumble on death.
   void _drawPlayer(
     Canvas canvas,
     Player player,
@@ -924,70 +1082,109 @@ class GamePainter extends CustomPainter {
     final double toX = player.lane == Lane.left ? leftCenterX : rightCenterX;
     final double t = player.laneAnimationT;
     final double eased = 1 - pow(1 - t, 2).toDouble();
-    final double x = lerpDouble(fromX, toX, eased)!;
+    final double x = lerpDouble(fromX, toX, eased)! + player.deathOffsetX;
 
     final double halfW = GameConfig.playerHalfWidth;
     final double halfH = GameConfig.playerHalfHeight;
 
-    // Soft flame halo behind the runner - brighter and larger while riding
-    // an updraft, as a subtle "you're boosted" readability cue. Drawn for
-    // both the skin sprite and the primitive placeholder.
-    _fillPaint.color =
-        (boosting ? Palette.updraftCore : Palette.playerFlame)
-            .withValues(alpha: boosting ? 0.55 : 0.35);
-    canvas.drawCircle(
-      Offset(x, anchorScreenY - halfH * 0.4),
-      halfW * (boosting ? 2.6 : 1.9),
-      _fillPaint,
-    );
+    // Ground plane, i.e. where the feet are when standing. Kept separate from
+    // the body's animated Y so the shadow stays pinned while they leap.
+    final double groundY = anchorScreenY;
+    final double bodyY = groundY +
+        player.bobOffset +
+        player.hopOffset +
+        player.deathOffsetY;
+
+    final double alpha = player.deathAlpha;
+    if (alpha <= 0) return;
+
+    // Contact shadow: tight and dark underfoot, wide and faint at the top of
+    // a leap. Cheap, and it is what stops the character floating.
+    final double shadowAlpha = player.shadowAlpha * alpha;
+    if (shadowAlpha > 0) {
+      _fillPaint.color = Palette.voidColor.withValues(alpha: shadowAlpha);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(x, groundY + 2),
+          width: halfW * 1.8 * player.shadowScale,
+          height: halfW * 0.62 * player.shadowScale,
+        ),
+        _fillPaint,
+      );
+    }
+
+    // Soft flame halo behind the runner, breathing with the climb cycle and
+    // flaring while an updraft has hold of them. Three concentric rings
+    // approximate a radial falloff: a flat disc reads as a sticker behind the
+    // character, and a real radial shader would have to be rebuilt every frame
+    // as the player moves.
+    final double boost = player.boostBlend;
+    final double haloPulse = 1 + 0.06 * sin(controller.runTime * 6.5);
+    final Color haloColor =
+        Color.lerp(Palette.playerFlame, Palette.updraftCore, boost)!;
+    final double haloRadius = halfW * (1.9 + boost * 0.9) * haloPulse;
+    const List<double> haloSteps = <double>[1.0, 0.68, 0.42];
+    const List<double> haloAlphas = <double>[0.10, 0.14, 0.20];
+    for (int i = 0; i < haloSteps.length; i++) {
+      _fillPaint.color = haloColor.withValues(
+          alpha: haloAlphas[i] * (1 + boost) * alpha);
+      canvas.drawCircle(
+        Offset(x, bodyY - halfH * 0.4),
+        haloRadius * haloSteps[i],
+        _fillPaint,
+      );
+    }
+
+    canvas.save();
+    canvas.translate(x, bodyY);
+    final double lean = player.lean;
+    if (lean != 0) canvas.rotate(lean);
+    canvas.scale(player.scaleX, player.scaleY);
 
     if (skinImage != null) {
       final double targetHeight = halfH * 4.4;
       final double targetWidth =
           targetHeight * (skinImage.width / skinImage.height);
-      // Lean into the move while switching lanes; front-facing skins never
-      // get flipped horizontally (they always look at the viewer).
-      final double lean = (1 - eased) * 0.16 * (toX >= fromX ? 1 : -1);
-      canvas.save();
-      canvas.translate(x, anchorScreenY);
-      if (lean != 0) canvas.rotate(lean);
       _drawCenteredImage(
         canvas,
         skinImage,
         Offset(0, -targetHeight * 0.30),
         targetWidth,
         targetHeight,
+        alpha: alpha,
       );
-      canvas.restore();
-      return;
+    } else {
+      _drawPlayerPlaceholder(canvas, halfW, halfH, alpha);
     }
+    canvas.restore();
+  }
 
-    // Primitive placeholder silhouette, used until the skin atlas has
-    // finished loading (or if a skin failed to decode for any reason).
+  /// Primitive placeholder silhouette, used until the skin atlas has finished
+  /// loading (or if a skin failed to decode for any reason). Drawn in the
+  /// player's already-transformed local space, so it inherits the same rig.
+  void _drawPlayerPlaceholder(
+    Canvas canvas,
+    double halfW,
+    double halfH,
+    double alpha,
+  ) {
     final Rect body = Rect.fromCenter(
-      center: Offset(x, anchorScreenY - halfH * 0.2),
+      center: Offset(0, -halfH * 0.2),
       width: halfW * 1.6,
       height: halfH * 1.8,
     );
-    final RRect rrBody =
-        RRect.fromRectAndRadius(body, Radius.circular(halfW * 0.7));
-    _fillPaint.color = Palette.playerOutline;
+    _fillPaint.color = Palette.playerOutline.withValues(alpha: alpha);
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        body.inflate(2),
-        Radius.circular(halfW * 0.8),
-      ),
+      RRect.fromRectAndRadius(body.inflate(2), Radius.circular(halfW * 0.8)),
       _fillPaint,
     );
-    _fillPaint.color = Palette.playerCore;
-    canvas.drawRRect(rrBody, _fillPaint);
-
-    _fillPaint.color = Palette.playerFlame;
-    canvas.drawCircle(
-      Offset(x, body.top - 4),
-      halfW * 0.55,
+    _fillPaint.color = Palette.playerCore.withValues(alpha: alpha);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(body, Radius.circular(halfW * 0.7)),
       _fillPaint,
     );
+    _fillPaint.color = Palette.playerFlame.withValues(alpha: alpha);
+    canvas.drawCircle(Offset(0, body.top - 4), halfW * 0.55, _fillPaint);
   }
 
   // --- Shared sprite helper ----------------------------------------------

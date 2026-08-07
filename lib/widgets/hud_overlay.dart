@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/layout_config.dart';
 import '../models/hud_snapshot.dart';
 import '../rendering/item_sprites.dart';
+import '../services/haptic_service.dart';
 import '../services/items_atlas_service.dart';
 import 'atlas_icon.dart';
 
@@ -17,70 +19,88 @@ class HudOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Size size = MediaQuery.sizeOf(context);
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: ValueListenableBuilder<HudSnapshot>(
-          valueListenable: hud,
-          builder: (context, snapshot, _) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _PauseButton(onTap: onPause),
-                const SizedBox(width: 10),
-                // Flexible on both stacks: five-digit heights or a large system
-                // font must shrink the chips, never overflow the top bar.
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topLeft,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _StatChip(
-                          label: 'HEIGHT',
-                          value: '${snapshot.heightMeters} m',
-                          primary: true,
-                        ),
-                        const SizedBox(height: 4),
-                        _RidgeLabel(ridgeNumber: snapshot.ridgeNumber),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topRight,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _EmbersChip(amount: snapshot.embersThisRun),
-                        if (snapshot.comboMultiplier > 1) ...[
-                          const SizedBox(height: 4),
-                          _ComboBadge(
-                            multiplier: snapshot.comboMultiplier,
-                            streak: snapshot.comboCount,
+      // Top-centered, not centered: a [Center] here would float the whole bar
+      // down into the middle of the playfield, on top of the lanes the player
+      // is trying to read.
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: LayoutConfig.contentWidth(size),
+          ),
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: LayoutConfig.textScaler(context, size)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: ValueListenableBuilder<HudSnapshot>(
+                valueListenable: hud,
+                builder: (context, snapshot, _) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _PauseButton(onTap: onPause),
+                      const SizedBox(width: 10),
+                      // Flexible on both stacks: five-digit heights or a large
+                      // system font must shrink the chips, never overflow the
+                      // top bar.
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topLeft,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _StatChip(
+                                label: 'HEIGHT',
+                                value: '${snapshot.heightMeters} m',
+                                primary: true,
+                              ),
+                              const SizedBox(height: 4),
+                              _RidgeLabel(ridgeNumber: snapshot.ridgeNumber),
+                            ],
                           ),
-                        ],
-                        if (snapshot.shieldCharges > 0) ...[
-                          const SizedBox(height: 4),
-                          _ShieldBadge(charges: snapshot.shieldCharges),
-                        ],
-                        const SizedBox(height: 6),
-                        _StatChip(
-                          label: 'BEST',
-                          value: '${snapshot.bestHeightMeters} m',
-                          primary: false,
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topRight,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _EmbersChip(amount: snapshot.embersThisRun),
+                              if (snapshot.comboMultiplier > 1) ...[
+                                const SizedBox(height: 4),
+                                _ComboBadge(
+                                  multiplier: snapshot.comboMultiplier,
+                                  streak: snapshot.comboCount,
+                                ),
+                              ],
+                              if (snapshot.shieldCharges > 0) ...[
+                                const SizedBox(height: 4),
+                                _ShieldBadge(charges: snapshot.shieldCharges),
+                              ],
+                              const SizedBox(height: 6),
+                              _StatChip(
+                                label: 'BEST',
+                                value: '${snapshot.bestHeightMeters} m',
+                                primary: false,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -98,11 +118,17 @@ class _PauseButton extends StatelessWidget {
       color: Colors.black.withValues(alpha: 0.38),
       shape: const CircleBorder(),
       child: InkWell(
-        onTap: onTap,
+        onTap: () {
+          HapticService.instance.light();
+          onTap();
+        },
         customBorder: const CircleBorder(),
         child: Container(
-          width: 38,
-          height: 38,
+          // Comfortably above the 44pt minimum touch target, because this is
+          // the only button on screen during a run and it is pressed under
+          // pressure.
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
@@ -118,45 +144,91 @@ class _PauseButton extends StatelessWidget {
 /// on an Ember streak. Reads at a glance ("x2 STREAK 5") and disappears again
 /// as soon as the streak breaks, so no permanent HUD real estate is spent on
 /// something the player isn't actively earning.
-class _ComboBadge extends StatelessWidget {
+///
+/// It punches when the multiplier steps up: that is the moment the streak
+/// actually became worth more, and it is easy to miss while watching the lane
+/// ahead.
+class _ComboBadge extends StatefulWidget {
   const _ComboBadge({required this.multiplier, required this.streak});
 
   final int multiplier;
   final int streak;
 
   @override
+  State<_ComboBadge> createState() => _ComboBadgeState();
+}
+
+class _ComboBadgeState extends State<_ComboBadge>
+    with SingleTickerProviderStateMixin {
+  static const Color _accent = Color(0xFFFF9640);
+
+  late final AnimationController _punch = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  )..forward();
+
+  @override
+  void didUpdateWidget(_ComboBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.multiplier != oldWidget.multiplier) {
+      _punch.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _punch.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    const Color accent = Color(0xFFFF9640);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: accent.withValues(alpha: 0.75), width: 1.3),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'x$multiplier',
-            style: const TextStyle(
-              color: accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-            ),
+    return ScaleTransition(
+      scale: Tween<double>(
+        begin: 1.45,
+        end: 1,
+      ).animate(CurvedAnimation(parent: _punch, curve: Curves.easeOutBack)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: _accent.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _accent.withValues(alpha: 0.75),
+            width: 1.3,
           ),
-          const SizedBox(width: 6),
-          Text(
-            'STREAK $streak',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: _accent.withValues(alpha: 0.35 * (1 - _punch.value)),
+              blurRadius: 16,
+              spreadRadius: -2,
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'x${widget.multiplier}',
+              style: const TextStyle(
+                color: _accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'STREAK ${widget.streak}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -217,8 +289,10 @@ class _EmbersChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AtlasIcon(
-            image: ItemsAtlasService.instance
-                .cell(ItemSprites.uiCurrency.row, ItemSprites.uiCurrency.col),
+            image: ItemsAtlasService.instance.cell(
+              ItemSprites.uiCurrency.row,
+              ItemSprites.uiCurrency.col,
+            ),
             size: 16,
             fallback: Icons.local_fire_department,
             fallbackColor: const Color(0xFFFFC66B),
@@ -239,7 +313,11 @@ class _EmbersChip extends StatelessWidget {
 }
 
 class _StatChip extends StatelessWidget {
-  const _StatChip({required this.label, required this.value, required this.primary});
+  const _StatChip({
+    required this.label,
+    required this.value,
+    required this.primary,
+  });
 
   final String label;
   final String value;

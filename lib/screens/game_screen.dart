@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../core/game_config.dart';
+import '../core/layout_config.dart';
 import '../game/game_controller.dart';
 import '../models/game_phase.dart';
 import '../models/lane.dart';
 import '../rendering/game_painter.dart';
+import '../services/audio_service.dart';
 import '../widgets/game_over_overlay.dart';
 import '../widgets/hud_overlay.dart';
 import '../widgets/pause_overlay.dart';
@@ -50,9 +52,13 @@ class _GameScreenState extends State<GameScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Losing focus mid-climb would otherwise mean dying to a hazard the
-    // player never saw, so back-grounding the app pauses the run.
+    // player never saw, so back-grounding the app pauses the run - and mutes
+    // it, so the ridge isn't still rumbling from the lock screen.
     if (state != AppLifecycleState.resumed) {
       _controller.pause();
+      AudioService.instance.suspend();
+    } else {
+      AudioService.instance.resumeFromSuspend();
     }
   }
 
@@ -71,7 +77,10 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  void _exitToMenu() => Navigator.of(context).maybePop();
+  void _exitToMenu() {
+    _controller.quit();
+    Navigator.of(context).maybePop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +100,11 @@ class _GameScreenState extends State<GameScreen>
         backgroundColor: const Color(0xFF120A10),
         body: LayoutBuilder(
           builder: (context, constraints) {
-            _controller.setViewportSize(constraints.biggest);
+            // The simulation runs in the painter's virtual (pre-scale)
+            // viewport, so that spawn look-ahead and segment recycling see the
+            // same amount of world on an iPad as on a phone.
+            _controller.setViewportSize(
+                LayoutConfig.worldViewport(constraints.biggest));
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _controller.handlePrimaryTap,
@@ -107,7 +120,11 @@ class _GameScreenState extends State<GameScreen>
                   ValueListenableBuilder<GamePhase>(
                     valueListenable: _controller.phase,
                     builder: (context, phase, _) {
-                      if (phase == GamePhase.ready) {
+                      // Hidden before the run starts, and again while the
+                      // death animation plays - nothing should compete with
+                      // that moment.
+                      if (phase == GamePhase.ready ||
+                          phase == GamePhase.dying) {
                         return const SizedBox.shrink();
                       }
                       return HudOverlay(
@@ -136,6 +153,7 @@ class _GameScreenState extends State<GameScreen>
                             onExit: _exitToMenu,
                           );
                         case GamePhase.playing:
+                        case GamePhase.dying:
                           return const SizedBox.shrink();
                       }
                     },

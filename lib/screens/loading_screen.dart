@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../services/audio_service.dart';
 import '../services/background_service.dart';
+import '../services/haptic_service.dart';
 import '../services/items_atlas_service.dart';
 import '../services/lava_atlas_service.dart';
 import '../services/progress_service.dart';
@@ -61,6 +63,10 @@ class _LoadingScreenState extends State<LoadingScreen>
       () => SettingsService.instance.initialize(),
       () => ProgressService.instance.initialize(),
       () => SkinManager.instance.initialize(),
+      () => HapticService.instance.initialize(),
+      // Opening the audio session and pre-decoding the first cues happens
+      // here so the very first button press already clicks.
+      () => AudioService.instance.initialize(),
       // Slicing every sprite atlas down to tightly cropped cells happens
       // once, here, and never again during actual gameplay.
       () => SkinAtlasService.instance.preload(),
@@ -108,6 +114,7 @@ class _LoadingScreenState extends State<LoadingScreen>
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    AudioService.instance.play(Sfx.loadingComplete);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const MainMenuScreen()),
     );

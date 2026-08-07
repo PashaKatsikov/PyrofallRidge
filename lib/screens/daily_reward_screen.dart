@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../rendering/item_sprites.dart';
+import '../services/audio_service.dart';
+import '../services/haptic_service.dart';
 import '../services/items_atlas_service.dart';
 import '../services/progress_service.dart';
 import '../widgets/atlas_icon.dart';
@@ -74,6 +76,8 @@ class DailyRewardScreen extends StatelessWidget {
                     onTap: () {
                       final int reward = progress.claimDaily();
                       if (reward > 0) {
+                        AudioService.instance.play(Sfx.reward);
+                        HapticService.instance.heavy();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('+$reward Embers'),

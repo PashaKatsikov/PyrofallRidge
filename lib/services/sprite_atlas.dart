@@ -28,6 +28,7 @@ class SpriteAtlas {
     this.mirrorX = false,
     this.maxCellSize = 192,
     this.onlyCells,
+    this.rightOverscan,
   }) : _cells = List<ui.Image?>.filled(columns * rows, null);
 
   final String assetPath;
@@ -47,6 +48,14 @@ class SpriteAtlas {
   /// only a handful of cells are ever used (terrain, lava) pass one so the
   /// other 50+ cells never occupy memory.
   final Set<int>? onlyCells;
+
+  /// Extra pixels to search past a cell's right edge before cropping,
+  /// keyed by flat cell index. These sheets are hand-illustrated rather than
+  /// laid out on a strict grid, and a few drawings genuinely straddle their
+  /// nominal column - a boulder's shoulder spilling into the next cell, say.
+  /// Without this the content search clips at the grid line, cutting a round
+  /// shape into one with a flat, straight-edged side.
+  final Map<int, double>? rightOverscan;
 
   final List<ui.Image?> _cells;
   bool _isLoaded = false;
@@ -87,6 +96,7 @@ class SpriteAtlas {
             columns: columns,
             rows: rows,
             wanted: onlyCells?.toList(),
+            rightOverscan: rightOverscan,
           ),
         );
       }
@@ -164,6 +174,7 @@ class AtlasBoundsRequest {
     required this.columns,
     required this.rows,
     required this.wanted,
+    this.rightOverscan,
   });
 
   final Uint8List pixels;
@@ -174,6 +185,9 @@ class AtlasBoundsRequest {
 
   /// Flat cell indices to measure, or null for all of them.
   final List<int>? wanted;
+
+  /// See [SpriteAtlas.rightOverscan].
+  final Map<int, double>? rightOverscan;
 }
 
 /// Anything fainter than this counts as background, which keeps a barely
@@ -197,7 +211,9 @@ Int32List computeAtlasCellBounds(AtlasBoundsRequest request) {
     final int row = index ~/ request.columns;
     final int x0 = (col * cellWidth).floor();
     final int y0 = (row * cellHeight).floor();
-    final int x1 = math.min(request.sheetWidth, ((col + 1) * cellWidth).ceil());
+    final double overscan = request.rightOverscan?[index] ?? 0;
+    final int x1 = math.min(
+        request.sheetWidth, ((col + 1) * cellWidth + overscan).ceil());
     final int y1 = math.min(request.sheetHeight, ((row + 1) * cellHeight).ceil());
 
     final Int32List? box =
@@ -217,8 +233,14 @@ Int32List computeAtlasCellBounds(AtlasBoundsRequest request) {
 /// flame plume from the neighbour, for instance - and a naive alpha bounding
 /// box would swallow that sliver, shrinking and off-centering the real sprite.
 /// So the mask is split into connected blobs and only the cell's main blob is
-/// kept, together with any detached parts (sparks, floating crystals) that
-/// stay clear of the vertical cell seams where bleed always appears.
+/// kept, together with any detached parts (sparks, floating crystals, a
+/// character's own boots landing just clear of its robe) that stay well away
+/// from the left/right cell edges, where bleed from a packed neighbour always
+/// appears - close enough to the literal seam pixel to still read as "this
+/// cell's drawing", but faded by anti-aliasing into a translucent sliver
+/// rather than a hard cut. A blob within [_seamMarginFraction] of either edge
+/// is treated as that neighbour, not a legitimate part of this cell, however
+/// large it is.
 Int32List? _cellContentBounds(
   Uint8List pixels,
   int sheetWidth,
@@ -247,7 +269,6 @@ Int32List? _cellContentBounds(
 
   final Int32List stack = Int32List(width * height);
   final List<int> areas = <int>[];
-  final List<bool> touchesSeam = <bool>[];
   final List<int> boxes = <int>[];
 
   for (int start = 0; start < mask.length; start++) {
@@ -258,7 +279,6 @@ Int32List? _cellContentBounds(
 
     int area = 0;
     int minX = width, maxX = -1, minY = height, maxY = -1;
-    bool seam = false;
 
     while (top > 0) {
       final int p = stack[--top];
@@ -269,7 +289,6 @@ Int32List? _cellContentBounds(
       if (px > maxX) maxX = px;
       if (py < minY) minY = py;
       if (py > maxY) maxY = py;
-      if (px == 0 || px == width - 1) seam = true;
 
       if (px > 0 && mask[p - 1] == 1) {
         mask[p - 1] = 2;
@@ -290,7 +309,6 @@ Int32List? _cellContentBounds(
     }
 
     areas.add(area);
-    touchesSeam.add(seam);
     boxes.addAll(<int>[minX, minY, maxX, maxY]);
   }
 
@@ -306,11 +324,16 @@ Int32List? _cellContentBounds(
 
   // Specks smaller than this are decoding dust, not artwork.
   final int keepThreshold = (areas[main] * 0.02).ceil();
+  final int seamMargin = (width * _seamMarginFraction).round();
   for (int i = 0; i < areas.length; i++) {
-    if (i == main || touchesSeam[i] || areas[i] < keepThreshold) continue;
-    if (boxes[i * 4] < minX) minX = boxes[i * 4];
+    if (i == main || areas[i] < keepThreshold) continue;
+    final int bMinX = boxes[i * 4];
+    final int bMaxX = boxes[i * 4 + 2];
+    final bool nearSeam = bMinX < seamMargin || bMaxX > width - 1 - seamMargin;
+    if (nearSeam) continue;
+    if (bMinX < minX) minX = bMinX;
     if (boxes[i * 4 + 1] < minY) minY = boxes[i * 4 + 1];
-    if (boxes[i * 4 + 2] > maxX) maxX = boxes[i * 4 + 2];
+    if (bMaxX > maxX) maxX = bMaxX;
     if (boxes[i * 4 + 3] > maxY) maxY = boxes[i * 4 + 3];
   }
 
@@ -322,3 +345,8 @@ Int32List? _cellContentBounds(
     y0 + math.min(height, maxY + 2),
   ]);
 }
+
+/// How close to a cell's left/right edge a secondary blob has to be before
+/// it is assumed to be a packed neighbour bleeding across the gap rather
+/// than a genuinely detached part of this cell's own drawing.
+const double _seamMarginFraction = 0.15;

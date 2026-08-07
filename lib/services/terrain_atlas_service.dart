@@ -19,6 +19,7 @@ class TerrainAtlasService {
     columns: columns,
     rows: rows,
     onlyCells: TerrainSprites.flatIndices(columns),
+    rightOverscan: TerrainSprites.rockfallRightOverscanPx(columns),
   );
 
   bool get isLoaded => _atlas.isLoaded;
