@@ -76,13 +76,13 @@ class RelayCoordinator {
     if (!await probe.hasInterface()) {
       return const OfflineStop(returnToHome: false);
     }
+    if (!await probe.canReachNetwork()) {
+      return const OfflineStop(returnToHome: false);
+    }
     progress(0.28);
     try {
       await pulse.boot();
     } catch (_) {}
-    if (!await probe.canReachNetwork()) {
-      return const OfflineStop(returnToHome: false);
-    }
     progress(0.48);
     await tracker.awaitSignals();
     progress(0.72);
@@ -100,6 +100,9 @@ class RelayCoordinator {
     if (!await probe.hasInterface()) {
       return const OfflineStop(returnToHome: false);
     }
+    if (!await probe.canReachNetwork()) {
+      return const OfflineStop(returnToHome: false);
+    }
     final pending = await vault.consumePushUrl();
     if (pending != null && pending.isNotEmpty) {
       progress(1);
@@ -112,9 +115,6 @@ class RelayCoordinator {
     }
 
     await Future.wait<void>(<Future<void>>[pulse.boot(), tracker.start()]);
-    if (!await probe.canReachNetwork()) {
-      return const OfflineStop(returnToHome: false);
-    }
     progress(0.62);
     await tracker.awaitSignals(installTimeout: const Duration(seconds: 6));
     final reply = await _requestConfig();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -15,22 +16,42 @@ class SignalProbe {
     }
   }
 
-  /// Time-boxed DNS reachability against well-known hosts (never our own
-  /// domain) so a VPN or a not-yet-propagated app domain cannot force a false
-  /// "offline", and the retry button can never hang.
+  /// Factual internet check: ignores the interface/gateway state reported by
+  /// the OS and directly probes real reachability by resolving well-known
+  /// hosts (never our own domain, so a VPN or a not-yet-propagated app domain
+  /// cannot force a false "offline"). Both hosts are raced in parallel with a
+  /// short timeout so a dead upstream resolves to "offline" almost instantly
+  /// and the retry button can never hang.
   Future<bool> canReachNetwork() async {
-    if (!await hasInterface()) return false;
-    for (final host in const <String>['apple.com', 'icloud.com']) {
+    const hosts = <String>['apple.com', 'icloud.com'];
+    const timeout = Duration(milliseconds: 1500);
+    final probes = hosts.map((host) async {
       try {
-        final records = await InternetAddress.lookup(
-          host,
-        ).timeout(const Duration(seconds: 3));
-        if (records.any((record) => record.rawAddress.isNotEmpty)) return true;
+        final records =
+            await InternetAddress.lookup(host).timeout(timeout);
+        return records.any((record) => record.rawAddress.isNotEmpty);
       } catch (_) {
-        // Try the next host before declaring offline.
+        return false;
       }
+    }).toList();
+
+    // Resolve as soon as ANY host answers positively; otherwise wait for all
+    // to fail/time out (bounded by [timeout]).
+    final completer = Completer<bool>();
+    var pending = probes.length;
+    for (final probe in probes) {
+      probe.then((reachable) {
+        if (reachable) {
+          if (!completer.isCompleted) completer.complete(true);
+        } else {
+          pending -= 1;
+          if (pending == 0 && !completer.isCompleted) {
+            completer.complete(false);
+          }
+        }
+      });
     }
-    return false;
+    return completer.future;
   }
 
   Stream<List<ConnectivityResult>> get changes =>

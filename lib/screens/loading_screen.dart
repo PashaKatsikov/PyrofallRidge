@@ -62,9 +62,31 @@ class _LoadingScreenState extends State<LoadingScreen>
     super.initState();
     _ticker = createTicker(_onTick)..start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _runLoadTasks();
-      _resolveRoute();
+      _boot();
     });
+  }
+
+  Future<void> _boot() async {
+    final coordinator = widget.coordinator;
+    // Real reachability first — ignore the interface/gateway state and probe
+    // actual internet access before anything else. No connection → Nowifi
+    // immediately, before any splash fill or atlas warmup. Returning native
+    // users stay on the game path when offline.
+    if (coordinator != null &&
+        coordinator.enabled &&
+        coordinator.vault.route != RelayRoute.native) {
+      try {
+        if (!await coordinator.probe.canReachNetwork()) {
+          _stop = const OfflineStop(returnToHome: false);
+          _decisionReady = true;
+          if (mounted) _leaveImmediately();
+          return;
+        }
+      } catch (_) {}
+    }
+    if (!mounted || _navigated) return;
+    _runLoadTasks();
+    _resolveRoute();
   }
 
   Future<void> _resolveRoute() async {
@@ -80,6 +102,19 @@ class _LoadingScreenState extends State<LoadingScreen>
       _stop = const HomeStop();
     }
     _decisionReady = true;
+    if (!mounted || _navigated) return;
+    // Wifi on but no actual internet — leave as soon as the probe fails,
+    // do not wait for the bar to fill or for remaining asset tasks.
+    if (_stop is OfflineStop) {
+      _leaveImmediately();
+    }
+  }
+
+  void _leaveImmediately() {
+    if (_navigated) return;
+    _navigated = true;
+    _ticker.stop();
+    _route();
   }
 
   Future<void> _runLoadTasks() async {
@@ -129,7 +164,9 @@ class _LoadingScreenState extends State<LoadingScreen>
     // While the online routing decision is still pending, hold the bar just
     // short of full so it never parks at 100% waiting on the network.
     final double ceiling = _decisionReady ? _targetProgress : 0.9;
-    const double catchUpPerSecond = 1.6;
+    // Deliberately paced so the bar takes ~5 s to crawl to ~0.8 instead of
+    // snapping there instantly.
+    const double catchUpPerSecond = 0.16;
     final double next =
         _displayProgress.value +
             catchUpPerSecond * dt.clamp(0.0, 0.05).toDouble();

@@ -22,8 +22,8 @@ abstract final class RidgeRelayConfig {
   static const String supportUrl = 'https://pyrofallridge.com/support.html';
 
   // ── Rotated timing constants (unique to this project) ───────────────
-  /// Push-invite snooze after a skip / OS denial (3 d 9 h).
-  static const int pushSnoozeSeconds = 291600;
+  /// Push-invite snooze after a skip / OS denial (2 d 22 h 30 m).
+  static const int pushSnoozeSeconds = 253800;
 
   /// Delay before a second attribution read when the first looks organic.
   static const int organicRecheckSeconds = 8;
