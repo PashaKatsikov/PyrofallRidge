@@ -59,6 +59,26 @@ void main() {
     expect(find.text('Climb 100 m'), findsOneWidget);
   });
 
+  testWidgets('goals screen filters by completion', (tester) async {
+    await ProgressService.instance.resetProgress();
+    await pumpScreen(tester, const GoalsScreen());
+
+    // Nothing claimed yet: "COMPLETED" is empty, "IN PROGRESS" still shows
+    // the untouched goal.
+    await tester.tap(find.text('COMPLETED'));
+    await tester.pumpAndSettle();
+    expect(find.text('No goals claimed yet.'), findsOneWidget);
+    expect(find.text('Climb 100 m'), findsNothing);
+
+    await tester.tap(find.text('IN PROGRESS'));
+    await tester.pumpAndSettle();
+    expect(find.text('Climb 100 m'), findsOneWidget);
+
+    await tester.tap(find.text('ALL'));
+    await tester.pumpAndSettle();
+    expect(find.text('Climb 100 m'), findsOneWidget);
+  });
+
   testWidgets('daily reward screen lays out', (tester) async {
     await pumpScreen(tester, const DailyRewardScreen());
     expect(find.text('DAY 1'), findsOneWidget);
