@@ -30,6 +30,8 @@
 	<string>Pyrofall Ridge uses the camera to let you take a profile photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Pyrofall Ridge uses your photo library to let you choose a profile photo.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Your data is used to measure how you found Pyrofall Ridge and to improve the app.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

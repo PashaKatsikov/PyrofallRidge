@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../services/attribution_service.dart';
 import '../services/audio_service.dart';
 import '../services/background_service.dart';
 import '../services/haptic_service.dart';
@@ -52,6 +55,11 @@ class _LoadingScreenState extends State<LoadingScreen>
   }
 
   Future<void> _runLoadTasks() async {
+    // Fire-and-forget: install attribution is pure measurement, and the ATT
+    // permission prompt it may trigger waits on a user tap, so it must never
+    // hold up the loading bar.
+    unawaited(AttributionService.instance.initialize());
+
     final List<Future<void> Function()> tasks = <Future<void> Function()>[
       () => precacheImage(const AssetImage('assets/Game_Name.webp'), context),
       () => precacheImage(const AssetImage('assets/Icon.png'), context),

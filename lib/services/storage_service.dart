@@ -27,6 +27,10 @@ class StorageService {
   static const String _hapticsKey = 'pyrofall_ridge.haptics_enabled';
   static const String _onboardedKey = 'pyrofall_ridge.onboarded';
   static const String _avatarPathKey = 'pyrofall_ridge.avatar_path';
+  static const String _attributionStatusKey =
+      'pyrofall_ridge.attribution_status';
+  static const String _attributionMediaSourceKey =
+      'pyrofall_ridge.attribution_media_source';
 
   static const List<String> _progressKeys = <String>[
     _bestHeightKey,
@@ -171,6 +175,33 @@ class StorageService {
       await prefs.remove(_avatarPathKey);
     } else {
       await prefs.setString(_avatarPathKey, path);
+    }
+  }
+
+  /// Last install-attribution status AppsFlyer reported ("Organic" /
+  /// "Non-organic"), cached so it's available immediately on the next
+  /// launch without waiting on the SDK's async callback again.
+  Future<String?> loadAttributionStatus() async =>
+      (await _prefs).getString(_attributionStatusKey);
+
+  Future<void> saveAttributionStatus(String? status) async {
+    final SharedPreferences prefs = await _prefs;
+    if (status == null) {
+      await prefs.remove(_attributionStatusKey);
+    } else {
+      await prefs.setString(_attributionStatusKey, status);
+    }
+  }
+
+  Future<String?> loadAttributionMediaSource() async =>
+      (await _prefs).getString(_attributionMediaSourceKey);
+
+  Future<void> saveAttributionMediaSource(String? source) async {
+    final SharedPreferences prefs = await _prefs;
+    if (source == null) {
+      await prefs.remove(_attributionMediaSourceKey);
+    } else {
+      await prefs.setString(_attributionMediaSourceKey, source);
     }
   }
 
