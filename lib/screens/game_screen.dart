@@ -141,6 +141,7 @@ class _GameScreenState extends State<GameScreen>
                           return ReadyOverlay(onExit: _exitToMenu);
                         case GamePhase.paused:
                           return PauseOverlay(
+                            hud: _controller.hud,
                             onResume: _controller.resume,
                             onRestart: _controller.start,
                             onExit: _exitToMenu,

@@ -129,6 +129,7 @@ void main() {
     await pumpScreen(
       tester,
       PauseOverlay(
+        hud: ValueNotifier<HudSnapshot>(HudSnapshot.zero),
         onResume: () {},
         onRestart: () {},
         onExit: () {},
