@@ -7,6 +7,7 @@ import '../services/background_service.dart';
 import '../services/haptic_service.dart';
 import '../services/items_atlas_service.dart';
 import '../services/lava_atlas_service.dart';
+import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/settings_service.dart';
 import '../services/skin_atlas_service.dart';
@@ -62,6 +63,7 @@ class _LoadingScreenState extends State<LoadingScreen>
           const AssetImage('assets/bg_location_3_asset.webp'), context),
       () => SettingsService.instance.initialize(),
       () => ProgressService.instance.initialize(),
+      () => ProfileService.instance.initialize(),
       () => SkinManager.instance.initialize(),
       () => HapticService.instance.initialize(),
       // Opening the audio session and pre-decoding the first cues happens

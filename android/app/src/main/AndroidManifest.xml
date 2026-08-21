@@ -2,6 +2,9 @@
     <!-- Only needed to display the Privacy Policy / Support pages via WebView.
          The game itself is fully playable offline. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Lets the Settings screen's profile photo picker launch the camera. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
     <application
         android:label="Pyrofall Ridge"

@@ -69,12 +69,26 @@ class LeaderboardScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
+              _NextRivalHint(
+                rival: _nextRival(progress.bestHeightMeters),
+                playerBest: progress.bestHeightMeters,
+              ),
+              const SizedBox(height: 10),
               ..._buildRivalRows(progress.bestHeightMeters),
             ],
           );
         },
       ),
     );
+  }
+
+  /// The closest rival still ahead of [playerBest], or null once the player
+  /// has climbed past every name on the roster.
+  static _Rival? _nextRival(int playerBest) {
+    final List<_Rival> ahead =
+        _rivals.where((rival) => rival.meters > playerBest).toList()
+          ..sort((a, b) => a.meters.compareTo(b.meters));
+    return ahead.isEmpty ? null : ahead.first;
   }
 
   List<Widget> _buildRivalRows(int playerBest) {
@@ -116,6 +130,53 @@ class _SectionTitle extends StatelessWidget {
         fontSize: 13,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.2,
+      ),
+    );
+  }
+}
+
+/// "N m to pass NAME" - or a leading banner once nobody on the roster is
+/// left ahead. Gives the ranking a next concrete target instead of just a
+/// static list to glance at.
+class _NextRivalHint extends StatelessWidget {
+  const _NextRivalHint({required this.rival, required this.playerBest});
+
+  final _Rival? rival;
+  final int playerBest;
+
+  @override
+  Widget build(BuildContext context) {
+    final _Rival? r = rival;
+    final String label = r == null
+        ? 'You lead the ridge - nobody left to pass.'
+        : '${r.meters - playerBest} m to pass ${r.name}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: kAccentHot.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kAccent.withValues(alpha: 0.5), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            r == null ? Icons.emoji_events : Icons.arrow_upward_rounded,
+            color: kAccent,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

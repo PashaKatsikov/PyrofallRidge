@@ -81,10 +81,13 @@ void main() {
 
   testWidgets('settings screen lays out', (tester) async {
     await pumpScreen(tester, const SettingsScreen());
+    expect(find.text('PROFILE'), findsOneWidget);
+    expect(find.text('ADD PHOTO'), findsOneWidget);
     expect(find.text('SOUND'), findsOneWidget);
-    expect(find.text('HAPTICS'), findsOneWidget);
     // The card list is taller than the test viewport, so the sections further
     // down have to be scrolled into view before they can be asserted on.
+    await tester.scrollUntilVisible(find.text('HAPTICS'), 120);
+    expect(find.text('HAPTICS'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('FULL'), 120);
     expect(find.text('FULL'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('RESET PROGRESS'), 120);

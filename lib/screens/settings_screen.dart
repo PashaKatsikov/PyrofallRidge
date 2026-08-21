@@ -1,13 +1,19 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/audio_service.dart';
 import '../services/haptic_service.dart';
+import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/settings_service.dart';
 import '../services/skin_manager.dart';
 import '../widgets/legal_links_row.dart';
 import '../widgets/menu_scaffold.dart';
 import '../widgets/progress_badges.dart';
+
+enum _PhotoAction { camera, gallery, remove }
 
 /// Player-facing options: audio, feedback and visual quality. Everything here
 /// is presentational - nothing changes difficulty, hitboxes or spawn fairness.
@@ -25,6 +31,7 @@ class SettingsScreen extends StatelessWidget {
           SettingsService.instance,
           AudioService.instance,
           HapticService.instance,
+          ProfileService.instance,
         ]),
         builder: (context, _) {
           final SettingsService settings = SettingsService.instance;
@@ -32,6 +39,16 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 6, 18, 28),
             children: [
+              _Card(
+                title: 'PROFILE',
+                subtitle:
+                    'A local photo shown only on this device - never '
+                    'uploaded anywhere.',
+                // Not const: it has to actually rebuild whenever
+                // ProfileService notifies (a new/removed photo), which a
+                // canonicalized const instance would silently skip.
+                child: _ProfilePhotoPicker(),
+              ),
               _Card(
                 title: 'SOUND',
                 subtitle:
@@ -348,6 +365,195 @@ class _Choice extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Circular avatar with an edit badge; tapping either it or the label below
+/// opens a sheet to take a new photo, pick one from the gallery, or remove
+/// the current one. The photo is local-only and purely cosmetic.
+class _ProfilePhotoPicker extends StatelessWidget {
+  const _ProfilePhotoPicker();
+
+  Future<void> _handleTap(BuildContext context) async {
+    final bool hasPhoto = ProfileService.instance.hasPhoto;
+    final _PhotoAction? action = await showModalBottomSheet<_PhotoAction>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1118),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 6),
+            _SheetOption(
+              icon: Icons.photo_camera_rounded,
+              label: 'Take Photo',
+              onTap: () => Navigator.of(sheetContext).pop(_PhotoAction.camera),
+            ),
+            _SheetOption(
+              icon: Icons.photo_library_rounded,
+              label: 'Choose from Gallery',
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(_PhotoAction.gallery),
+            ),
+            if (hasPhoto)
+              _SheetOption(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove Photo',
+                destructive: true,
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_PhotoAction.remove),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !context.mounted) return;
+
+    if (action == _PhotoAction.remove) {
+      HapticService.instance.light();
+      await ProfileService.instance.removePhoto();
+      return;
+    }
+
+    final ImageSource source = action == _PhotoAction.camera
+        ? ImageSource.camera
+        : ImageSource.gallery;
+    try {
+      final XFile? picked = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 800,
+      );
+      if (picked == null) return;
+      await ProfileService.instance.setPhotoFromFile(picked.path);
+      HapticService.instance.light();
+      AudioService.instance.play(Sfx.select);
+    } catch (_) {
+      // Most commonly a denied camera/photo-library permission, or no camera
+      // on a simulator - either way the player needs to know nothing was
+      // saved rather than silently seeing no change.
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not access the camera or photo library.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ProfileService profile = ProfileService.instance;
+    final String? path = profile.photoPath;
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => _handleTap(context),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                radius: 32,
+                backgroundColor: Colors.black.withValues(alpha: 0.4),
+                backgroundImage: path != null ? FileImage(File(path)) : null,
+                child: path == null
+                    ? const Icon(Icons.person, color: Colors.white38, size: 32)
+                    : null,
+              ),
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: const BoxDecoration(
+                    color: kAccentHot,
+                    shape: BoxShape.circle,
+                    border: Border.fromBorderSide(
+                      BorderSide(color: Color(0xFF1E1118), width: 2),
+                    ),
+                  ),
+                  child: const Icon(Icons.edit, size: 12, color: Colors.black),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                path != null ? 'Photo set' : 'No photo yet',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 5),
+              GestureDetector(
+                onTap: () => _handleTap(context),
+                child: Text(
+                  path != null ? 'CHANGE PHOTO' : 'ADD PHOTO',
+                  style: const TextStyle(
+                    color: kAccent,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SheetOption extends StatelessWidget {
+  const _SheetOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = destructive ? kAccentHot : Colors.white;
+    return ListTile(
+      leading: Icon(icon, color: destructive ? kAccentHot : kAccent),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 14.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      onTap: onTap,
     );
   }
 }

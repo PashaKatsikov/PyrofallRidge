@@ -26,6 +26,7 @@ class StorageService {
   static const String _musicVolumeKey = 'pyrofall_ridge.music_volume';
   static const String _hapticsKey = 'pyrofall_ridge.haptics_enabled';
   static const String _onboardedKey = 'pyrofall_ridge.onboarded';
+  static const String _avatarPathKey = 'pyrofall_ridge.avatar_path';
 
   static const List<String> _progressKeys = <String>[
     _bestHeightKey,
@@ -157,6 +158,21 @@ class StorageService {
 
   Future<void> saveOnboarded(bool value) async =>
       (await _prefs).setBool(_onboardedKey, value);
+
+  /// Absolute path to the locally saved profile photo, or null if the player
+  /// never set one (or removed it). The photo itself lives in the app's own
+  /// documents directory - only the path is kept here.
+  Future<String?> loadAvatarPath() async =>
+      (await _prefs).getString(_avatarPathKey);
+
+  Future<void> saveAvatarPath(String? path) async {
+    final SharedPreferences prefs = await _prefs;
+    if (path == null) {
+      await prefs.remove(_avatarPathKey);
+    } else {
+      await prefs.setString(_avatarPathKey, path);
+    }
+  }
 
   /// Wipes progression only - the player's settings survive a reset.
   Future<void> clearProgress() async {
