@@ -1,0 +1,64 @@
+workflows:
+  ios-release:
+    name: iOS Release → App Store
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      # TODO: set the App Store Connect integration name configured in Codemagic.
+      app_store_connect: Pyrofall Ridge Codemagic
+
+    environment:
+      groups:
+        - code-signing
+      flutter: 3.44.8
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: com.pyrofall.ridgegame
+        NSE_BUNDLE_ID: com.pyrofall.ridgegame.NotificationService
+        # Numeric App Store id.
+        APP_STORE_APPLE_ID: "6792835699"
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: gray-part-ios
+          include: true
+
+    scripts:
+      - name: Install Flutter dependencies
+        script: flutter pub get
+
+      - name: Install CocoaPods
+        script: pod install
+        working_directory: ios
+
+      - name: Code signing & Build IPA
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --platform IOS \
+            --create
+          app-store-connect fetch-signing-files "$NSE_BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --platform IOS \
+            --create
+          keychain add-certificates
+          flutter build ios --release --no-codesign
+          xcode-project use-profiles
+          xcode-project build-ipa \
+            --workspace "ios/Runner.xcworkspace" \
+            --scheme "Runner"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false

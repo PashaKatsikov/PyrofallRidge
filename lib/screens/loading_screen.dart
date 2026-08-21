@@ -14,6 +14,11 @@ import '../services/skin_atlas_service.dart';
 import '../services/skin_manager.dart';
 import '../services/terrain_atlas_service.dart';
 import '../services/vfx_atlas_service.dart';
+import '../emberlink/core/relay_models.dart';
+import '../emberlink/pages/nudge_screen.dart';
+import '../emberlink/pages/offline_screen.dart';
+import '../emberlink/pages/portal_view.dart';
+import '../emberlink/relay_coordinator.dart';
 import '../widgets/loading_progress_bar.dart';
 import 'main_menu_screen.dart';
 
@@ -28,7 +33,9 @@ import 'main_menu_screen.dart';
 /// is mathematically impossible for it to reach 100% before the app has
 /// actually finished preparing everything it needs.
 class LoadingScreen extends StatefulWidget {
-  const LoadingScreen({super.key});
+  const LoadingScreen({super.key, this.coordinator});
+
+  final RelayCoordinator? coordinator;
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
@@ -41,6 +48,12 @@ class _LoadingScreenState extends State<LoadingScreen>
   bool _allTasksDone = false;
   bool _navigated = false;
 
+  // Online routing decision, resolved in parallel with the asset warm-up. When
+  // there is no coordinator or the gray flow is disabled this settles to
+  // [HomeStop] immediately, so the loading experience is unchanged.
+  RelayStop? _stop;
+  bool _decisionReady = false;
+
   late final Ticker _ticker;
   Duration? _lastTick;
 
@@ -48,7 +61,25 @@ class _LoadingScreenState extends State<LoadingScreen>
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick)..start();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _runLoadTasks());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runLoadTasks();
+      _resolveRoute();
+    });
+  }
+
+  Future<void> _resolveRoute() async {
+    final coordinator = widget.coordinator;
+    if (coordinator == null) {
+      _stop = const HomeStop();
+      _decisionReady = true;
+      return;
+    }
+    try {
+      _stop = await coordinator.decide(onProgress: (_) {});
+    } catch (_) {
+      _stop = const HomeStop();
+    }
+    _decisionReady = true;
   }
 
   Future<void> _runLoadTasks() async {
@@ -95,14 +126,18 @@ class _LoadingScreenState extends State<LoadingScreen>
 
     // Ease the visible bar towards the real progress, but it can never
     // pass it - only genuine completion of the load tasks can finish it.
+    // While the online routing decision is still pending, hold the bar just
+    // short of full so it never parks at 100% waiting on the network.
+    final double ceiling = _decisionReady ? _targetProgress : 0.9;
     const double catchUpPerSecond = 1.6;
     final double next =
         _displayProgress.value +
             catchUpPerSecond * dt.clamp(0.0, 0.05).toDouble();
-    _displayProgress.value =
-        next < _targetProgress ? next : _targetProgress;
+    _displayProgress.value = next < ceiling ? next : ceiling;
 
-    if (_allTasksDone && _displayProgress.value >= _targetProgress - 0.001) {
+    if (_allTasksDone &&
+        _decisionReady &&
+        _displayProgress.value >= _targetProgress - 0.001) {
       _displayProgress.value = 1;
       _finish();
     }
@@ -112,6 +147,58 @@ class _LoadingScreenState extends State<LoadingScreen>
     if (_navigated) return;
     _navigated = true;
     _ticker.stop();
+    _route();
+  }
+
+  Future<void> _route() async {
+    final coordinator = widget.coordinator;
+    final stop = _stop ?? const HomeStop();
+
+    // Online paths — the gray screens manage their own orientation.
+    if (coordinator != null && stop is OfflineStop) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => OfflineScreen(
+            probe: coordinator.probe,
+            retryBuilder: (_) =>
+                LoadingScreen(coordinator: coordinator),
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (coordinator != null && stop is PortalStop) {
+      Widget portalBuilder(BuildContext _) => PortalView(
+        url: stop.url,
+        coldLaunch: stop.coldLaunch,
+        vault: coordinator.vault,
+        probe: coordinator.probe,
+        pulse: coordinator.pulse,
+        agent: coordinator.agent,
+      );
+      if (coordinator.vault.shouldShowPushInvite &&
+          await coordinator.pulse.canOfferPermission()) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => NudgeScreen(
+              vault: coordinator.vault,
+              pulse: coordinator.pulse,
+              nextBuilder: portalBuilder,
+            ),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        Navigator.of(context)
+            .pushReplacement(MaterialPageRoute<void>(builder: portalBuilder));
+      }
+      return;
+    }
+
+    // Offline game — original behaviour, unchanged.
+    if (!mounted) return;
     SystemChrome.setPreferredOrientations(<DeviceOrientation>[
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,

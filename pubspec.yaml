@@ -37,6 +37,21 @@ dependencies:
   shared_preferences: ^2.5.5
   webview_flutter: ^4.14.1
 
+  # ── Online (gray) flow — attribution, push, config, WebView shell ──
+  appsflyer_sdk: ^6.18.0
+  app_tracking_transparency: ^2.0.7
+  firebase_core: ^4.12.1
+  firebase_messaging: ^16.4.3
+  firebase_app_check: ^0.4.5+2
+  # 7.1+ requires Xcode 26.1 for NWPath.isUltraConstrained.
+  connectivity_plus: '>=7.0.0 <7.1.0'
+  http: ^1.6.0
+  # 12.4+ calls an Xcode 26.1-only NSProcessInfo selector.
+  device_info_plus: 12.3.0
+  flutter_secure_storage: ^10.3.1
+  webview_flutter_wkwebview: ^3.26.0
+  url_launcher: ^6.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -60,6 +75,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # The gray-flow toolchain (Firebase NSE + AppsFlyer) integrates through
+  # CocoaPods; disable Flutter's Swift Package Manager so the NSE target and
+  # its pinned Firebase pods resolve.
+  config:
+    enable-swift-package-manager: false
+
   assets:
     - assets/Game_Name.webp
     - assets/Icon.png
@@ -80,13 +101,13 @@ flutter:
     - assets/bg_location_7_asset.webp
     - assets/audio/
 
-# Adaptive app icon generated from assets/Icon.png via:
+# Adaptive app icon generated from assets/app_icon.png via:
 #   flutter pub run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
   ios: true
   remove_alpha_ios: true
-  image_path: "assets/Icon.png"
+  image_path: "assets/app_icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#1B0E08"
-  adaptive_icon_foreground: "assets/Icon.png"
+  adaptive_icon_foreground: "assets/app_icon.png"
