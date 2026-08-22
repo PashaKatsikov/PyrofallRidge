@@ -95,7 +95,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
                           onTap: _retry,
                         ),
                         AnimatedSize(
-                          duration: const Duration(milliseconds: 180),
+                          duration: const Duration(milliseconds: 235),
                           child: _stillOffline
                               ? const Padding(
                                   padding: EdgeInsets.only(top: 12),

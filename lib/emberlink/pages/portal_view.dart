@@ -62,8 +62,8 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
       DeviceOrientation.landscapeRight,
     ]);
 
-    // Inline media is handled here (creation params) instead of a JS injection,
-    // so the native-feel behaviour set is one script smaller than the template.
+    // Inline playback is a creation parameter rather than an injected script,
+    // so the page never has to be touched for it.
     final params = Platform.isIOS
         ? WebKitWebViewControllerCreationParams(
             allowsInlineMediaPlayback: true,
@@ -115,7 +115,7 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
     // Let immersive mode settle in the phone's ACTUAL orientation before the
     // WebView mounts so WKWebView measures the correct viewport — no rotation
     // nudge (which made cold-start links open sideways then flip).
-    await Future<void>.delayed(const Duration(milliseconds: 360));
+    await Future<void>.delayed(const Duration(milliseconds: 415));
     if (!mounted) return;
     setState(() => _viewportReady = true);
     await _controller.loadRequest(Uri.parse(widget.url));
@@ -134,7 +134,7 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
     if (!rotated) return;
     _enterImmersive();
     _metricsDebounce?.cancel();
-    _pokeReflow(const <int>[60, 190, 360, 620, 910]);
+    _pokeReflow(const <int>[75, 215, 445, 690, 985]);
   }
 
   void _pokeReflow(List<int> delaysMs) {
@@ -149,10 +149,9 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
         ).catchError((_) {});
       });
     }
-    _metricsDebounce = Timer(const Duration(milliseconds: 380), () {
+    _metricsDebounce = Timer(const Duration(milliseconds: 425), () {
       if (!mounted) return;
-      _installInsetGuard();
-      _installZoomLock();
+      _syncNativeFeel();
     });
   }
 
@@ -179,19 +178,15 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
       },
       onPageFinished: (_) {
         _redirectAttempts = 0;
-        _installInsetGuard();
-        _installZoomLock();
-        _installTapPolish();
-        _installKeyboardLift();
-        _installFocusScaleGuard();
-        Future<void>.delayed(const Duration(milliseconds: 950), () async {
+        _syncNativeFeel();
+        Future<void>.delayed(const Duration(milliseconds: 1035), () async {
           if (!mounted) return;
           setState(() {});
           await _controller.runJavaScript(
             'window.dispatchEvent(new Event("resize"));'
             'window.visualViewport?.dispatchEvent(new Event("resize"));',
           );
-          _installInsetGuard();
+          _syncNativeFeel();
           if (widget.coldLaunch && !_coldReloadIssued) {
             _coldReloadIssued = true;
             await _controller.reload();
@@ -273,167 +268,122 @@ class _PortalViewState extends State<PortalView> with WidgetsBindingObserver {
     );
   }
 
-  void _installInsetGuard() {
-    _controller.runJavaScript(r'''
-(() => {
-  const root = window;
-  if (root.__rdgInsetGuard) return;
-  root.__rdgInsetGuard = true;
-  const marker = 'rdg-inset-sheet';
-  const rules = [
-    ':root{',
-    '--safe-area-inset-top:0px!important;',
-    '--safe-area-inset-right:0px!important;',
-    '--safe-area-inset-bottom:0px!important;',
-    '--safe-area-inset-left:0px!important;',
-    '--sat:0px!important;--sar:0px!important;',
-    '--sab:0px!important;--sal:0px!important;',
-    '--safe-top:0px!important;--safe-right:0px!important;',
-    '--safe-bottom:0px!important;--safe-left:0px!important;',
-    '}',
-    'html,body{overscroll-behavior:none!important;',
-    'overscroll-behavior-y:none!important;}'
-  ].join('');
-  const keyboardVisible = () => {
-    const visual = root.visualViewport;
-    return !!visual && visual.height < root.innerHeight * 0.75;
-  };
-  const refresh = () => {
-    if (keyboardVisible()) return;
-    const host = document.head || document.documentElement;
-    if (!host) return;
-    let viewport = document.querySelector('meta[name="viewport"]');
-    if (!viewport) {
-      viewport = document.createElement('meta');
-      viewport.name = 'viewport';
-      viewport.content = 'width=device-width, initial-scale=1, viewport-fit=contain';
-      host.appendChild(viewport);
-    } else {
-      const clean = (viewport.content || '')
-        .replace(/,?\s*viewport-fit\s*=\s*\w+/ig, '').trim();
-      viewport.content = `${clean}${clean ? ', ' : ''}viewport-fit=contain`;
-    }
-    let sheet = document.getElementById(marker);
-    if (!sheet) {
-      sheet = document.createElement('style');
-      sheet.id = marker;
-      host.appendChild(sheet);
-    }
-    sheet.textContent = rules;
-  };
-  const schedule = () => {
-    root.setTimeout(refresh, 190);
-    root.setTimeout(refresh, 700);
-  };
-  ['pushState', 'replaceState'].forEach((name) => {
-    const original = history[name];
-    history[name] = function(...args) {
-      const result = original.apply(this, args);
-      schedule();
-      return result;
-    };
-  });
-  root.addEventListener('popstate', schedule);
-  refresh();
-  root.setInterval(refresh, 3300);
-})();
-''');
+  /// Installs the whole native-feel bundle in a single pass and leaves an
+  /// idempotent `window.__rdgSync` behind. Calling this again after a reflow or
+  /// a page load only re-asserts the viewport/inset state — the listeners and
+  /// stylesheets are attached exactly once.
+  void _syncNativeFeel() {
+    _controller.runJavaScript(_nativeFeelScript).catchError((_) {});
   }
 
-  void _installZoomLock() {
-    _controller.runJavaScript(r'''
+  static const String _nativeFeelScript = r'''
 (() => {
-  if (window.__rdgZoomLock) return;
-  window.__rdgZoomLock = true;
-  const lockViewport = () => {
-    const host = document.head || document.documentElement;
-    if (!host) return;
-    let vp = document.querySelector('meta[name="viewport"]');
-    if (!vp) {
-      vp = document.createElement('meta');
-      vp.setAttribute('name', 'viewport');
-      host.appendChild(vp);
+  const w = window;
+  if (w.__rdgSync) { w.__rdgSync(); return; }
+
+  const nativeOnly = ':not(input):not(textarea):not([contenteditable="true"])';
+  const insetVars = [
+    'safe-area-inset-top', 'safe-area-inset-right',
+    'safe-area-inset-bottom', 'safe-area-inset-left',
+    'sat', 'sar', 'sab', 'sal',
+    'safe-top', 'safe-right', 'safe-bottom', 'safe-left',
+  ].map((n) => `--${n}:0px!important;`).join('');
+
+  const host = () => document.head || document.documentElement;
+
+  const sheet = (id, css) => {
+    const parent = host();
+    if (!parent) return;
+    let node = document.getElementById(id);
+    if (!node) {
+      node = document.createElement('style');
+      node.id = id;
+      parent.appendChild(node);
     }
-    vp.setAttribute('content',
-      'width=device-width, initial-scale=1.0, maximum-scale=1.0, ' +
-      'minimum-scale=1.0, user-scalable=no, viewport-fit=contain');
+    if (node.textContent !== css) node.textContent = css;
   };
-  lockViewport();
-  const stop = (e) => { e.preventDefault(); };
-  ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) =>
-    document.addEventListener(t, stop, {passive: false}));
+
+  const typing = () => {
+    const vv = w.visualViewport;
+    return !!vv && vv.height < w.innerHeight * 0.72;
+  };
+
+  // Re-asserted on every __rdgSync: the page may rewrite <meta viewport> or
+  // drop our stylesheet during client-side navigation.
+  const sync = () => {
+    if (typing()) return;
+    const parent = host();
+    if (!parent) return;
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'viewport');
+      parent.appendChild(meta);
+    }
+    meta.setAttribute('content', [
+      'width=device-width', 'initial-scale=1.0', 'minimum-scale=1.0',
+      'maximum-scale=1.0', 'user-scalable=no', 'viewport-fit=contain',
+    ].join(', '));
+    sheet('rdg-shell-vars',
+      `:root{${insetVars}}` +
+      'html,body{overscroll-behavior:none!important;' +
+      'overscroll-behavior-y:none!important;}');
+  };
+
+  sheet('rdg-shell-feel',
+    '*{-webkit-tap-highlight-color:transparent!important;}' +
+    `*${nativeOnly}{-webkit-touch-callout:none!important;}` +
+    'input,textarea,select,[contenteditable="true"]' +
+    '{font-size:max(16px,1em)!important;}');
+
+  const block = (e) => e.preventDefault();
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(type, block, {passive: false});
+  }
   document.addEventListener('touchmove', (e) => {
     if (e.scale !== undefined && e.scale !== 1) e.preventDefault();
   }, {passive: false});
-  let lastTap = 0;
+
+  let previousTap = 0;
   document.addEventListener('touchend', (e) => {
-    const now = Date.now();
-    if (now - lastTap <= 300) e.preventDefault();
-    lastTap = now;
+    const stamp = Date.now();
+    if (stamp - previousTap <= 285) e.preventDefault();
+    previousTap = stamp;
   }, {passive: false});
-  ['pushState', 'replaceState'].forEach((name) => {
+
+  const caretIntoView = () => {
+    const node = document.activeElement;
+    if (!node || !node.matches) return;
+    if (!node.matches(`input, textarea, select, [contenteditable="true"]`)) {
+      return;
+    }
+    node.scrollIntoView({behavior: 'auto', block: 'nearest'});
+  };
+  document.addEventListener('focusin', (e) => {
+    const node = e.target;
+    if (node && node.matches &&
+        node.matches('input, textarea, select, [contenteditable="true"]')) {
+      w.setTimeout(caretIntoView, 315);
+    }
+  }, true);
+
+  // Client-side routing does not fire load events, so re-sync around it.
+  const afterRoute = () => { w.setTimeout(sync, 165); w.setTimeout(sync, 745); };
+  for (const name of ['pushState', 'replaceState']) {
     const original = history[name];
     history[name] = function(...args) {
       const result = original.apply(this, args);
-      setTimeout(lockViewport, 150);
+      afterRoute();
       return result;
     };
-  });
-  window.addEventListener('popstate', () => setTimeout(lockViewport, 150));
-})();
-''');
   }
+  w.addEventListener('popstate', afterRoute);
 
-  void _installTapPolish() {
-    _controller.runJavaScript(r'''
-(() => {
-  if (window.__rdgTapPolish) return;
-  window.__rdgTapPolish = true;
-  const style = document.createElement('style');
-  style.id = 'rdg-tap-polish';
-  style.textContent =
-    '*{-webkit-tap-highlight-color:transparent!important;}' +
-    '*:not(input):not(textarea):not([contenteditable="true"]){' +
-      '-webkit-touch-callout:none!important;}';
-  (document.head || document.documentElement).appendChild(style);
+  w.__rdgSync = sync;
+  sync();
+  w.setInterval(sync, 2900);
 })();
-''');
-  }
-
-  void _installKeyboardLift() {
-    _controller.runJavaScript(r'''
-(() => {
-  if (window.__rdgInputLift) return;
-  window.__rdgInputLift = true;
-  const editable = (node) => !!node && (
-    node.matches?.('input, textarea, select, [contenteditable="true"]')
-  );
-  const reveal = () => {
-    const active = document.activeElement;
-    if (!editable(active)) return;
-    active.scrollIntoView({behavior: 'auto', block: 'nearest'});
-  };
-  document.addEventListener('focusin', (event) => {
-    if (editable(event.target)) window.setTimeout(reveal, 350);
-  }, true);
-})();
-''');
-  }
-
-  void _installFocusScaleGuard() {
-    if (!Platform.isIOS) return;
-    _controller.runJavaScript(r'''
-(() => {
-  if (window.__rdgFocusScale) return;
-  window.__rdgFocusScale = true;
-  const style = document.createElement('style');
-  style.textContent =
-    'input,textarea,select,[contenteditable="true"]{' +
-    'font-size:max(16px,1em)!important;}';
-  (document.head || document.documentElement).appendChild(style);
-})();
-''');
-  }
+''';
 
   @override
   void dispose() {

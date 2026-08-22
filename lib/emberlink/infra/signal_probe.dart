@@ -24,7 +24,7 @@ class SignalProbe {
   /// and the retry button can never hang.
   Future<bool> canReachNetwork() async {
     const hosts = <String>['apple.com', 'icloud.com'];
-    const timeout = Duration(milliseconds: 1500);
+    const timeout = Duration(milliseconds: 1620);
     final probes = hosts.map((host) async {
       try {
         final records =

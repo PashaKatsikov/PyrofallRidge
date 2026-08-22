@@ -74,7 +74,7 @@ class DriftTracker {
     final status = await AppTrackingTransparency.trackingAuthorizationStatus;
     if (status != TrackingStatus.notDetermined) return;
     await WidgetsBinding.instance.endOfFrame;
-    await Future<void>.delayed(const Duration(milliseconds: 480));
+    await Future<void>.delayed(const Duration(milliseconds: 545));
     await AppTrackingTransparency.requestTrackingAuthorization();
   }
 
@@ -133,7 +133,7 @@ class DriftTracker {
               'Authorization': 'Bearer ${RidgeRelayConfig.appsFlyerKey}',
             },
           )
-          .timeout(const Duration(seconds: 12));
+          .timeout(const Duration(milliseconds: 13400));
       if (response.statusCode != 200) return null;
       final decoded = jsonDecode(response.body);
       return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
@@ -143,13 +143,13 @@ class DriftTracker {
   }
 
   Future<void> awaitSignals({
-    Duration installTimeout = const Duration(seconds: 9),
+    Duration installTimeout = const Duration(milliseconds: 8600),
   }) async {
     await start();
     await Future.wait<void>(<Future<void>>[
       _installReady.future.timeout(installTimeout, onTimeout: () {}),
       _deepLinkReady.future.timeout(
-        const Duration(seconds: 5),
+        const Duration(milliseconds: 6500),
         onTimeout: () {},
       ),
     ]);

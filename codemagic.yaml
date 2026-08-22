@@ -1,24 +1,25 @@
+definitions:
+  ridge_env: &ridge_env
+    groups:
+      - code-signing
+    flutter: 3.44.8
+    xcode: latest
+    cocoapods: default
+    vars:
+      RUNNER_BUNDLE_ID: com.pyrofall.ridgegame
+      PUSH_EXTENSION_BUNDLE_ID: com.pyrofall.ridgegame.NotificationService
+      APP_STORE_APPLE_ID: "6792835699"
+
 workflows:
-  ios-release:
-    name: iOS Release → App Store
+  ridge-appstore:
+    name: Pyrofall Ridge — App Store build
     max_build_duration: 60
     instance_type: mac_mini_m2
 
     integrations:
-      # TODO: set the App Store Connect integration name configured in Codemagic.
       app_store_connect: Pyrofall Ridge Codemagic
 
-    environment:
-      groups:
-        - code-signing
-      flutter: 3.44.8
-      xcode: latest
-      cocoapods: default
-      vars:
-        BUNDLE_ID: com.pyrofall.ridgegame
-        NSE_BUNDLE_ID: com.pyrofall.ridgegame.NotificationService
-        # Numeric App Store id.
-        APP_STORE_APPLE_ID: "6792835699"
+    environment: *ridge_env
 
     triggering:
       events:
@@ -28,25 +29,26 @@ workflows:
           include: true
 
     scripts:
-      - name: Install Flutter dependencies
-        script: flutter pub get
+      - name: Resolve Dart and pod dependencies
+        script: |
+          flutter pub get
+          pod install --project-directory=ios
 
-      - name: Install CocoaPods
-        script: pod install
-        working_directory: ios
-
-      - name: Code signing & Build IPA
+      - name: Provision the app and the push extension
         script: |
           keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --platform IOS \
-            --create
-          app-store-connect fetch-signing-files "$NSE_BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --platform IOS \
-            --create
+          for identifier in "$RUNNER_BUNDLE_ID" "$PUSH_EXTENSION_BUNDLE_ID"; do
+            app-store-connect fetch-signing-files "$identifier" \
+              --type IOS_APP_STORE \
+              --platform IOS \
+              --create
+          done
           keychain add-certificates
+
+      - name: Archive the IPA
+        script: |
+          # Build unsigned first: this step can rewrite the Xcode project, so
+          # profiles have to be applied afterwards or they get dropped.
           flutter build ios --release --no-codesign
           xcode-project use-profiles
           xcode-project build-ipa \

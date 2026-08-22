@@ -28,7 +28,7 @@ class RelayExchange {
             },
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 17));
+          .timeout(const Duration(milliseconds: 20500));
       ridgeTrace(
         () => '[RDG.EXCHANGE] response ${response.statusCode} ${response.body}',
       );

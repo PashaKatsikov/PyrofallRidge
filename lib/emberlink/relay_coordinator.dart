@@ -116,7 +116,9 @@ class RelayCoordinator {
 
     await Future.wait<void>(<Future<void>>[pulse.boot(), tracker.start()]);
     progress(0.62);
-    await tracker.awaitSignals(installTimeout: const Duration(seconds: 6));
+    await tracker.awaitSignals(
+      installTimeout: const Duration(milliseconds: 6900),
+    );
     final reply = await _requestConfig();
     progress(1);
     if (reply.hasDestination) return PortalStop(reply.url!);

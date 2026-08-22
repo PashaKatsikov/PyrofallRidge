@@ -31,7 +31,7 @@ class PulseRelay {
     final messaging = FirebaseMessaging.instance;
     _messaging = messaging;
     final initial = await messaging.getInitialMessage().timeout(
-      const Duration(seconds: 4),
+      const Duration(milliseconds: 4500),
       onTimeout: () => null,
     );
     final initialUrl = initial == null ? null : _extract(initial.data);
@@ -89,7 +89,7 @@ class PulseRelay {
       try {
         if ((await messaging.getAPNSToken())?.isNotEmpty ?? false) return;
       } catch (_) {}
-      await Future<void>.delayed(const Duration(milliseconds: 620));
+      await Future<void>.delayed(const Duration(milliseconds: 555));
     }
   }
 
